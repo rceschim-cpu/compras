@@ -6,20 +6,18 @@ Tudo roda localmente com Node.js, **sem nenhuma dependência externa** (`npm ins
 
 ## Como rodar
 
+**Local:**
+
 ```bash
 node server/server.js
 # abre http://localhost:3000 no Chrome
 ```
 
-Opcional: defina a chave por variável de ambiente em vez da tela de Config:
+**Deploy (Vercel):** o projeto já vem com `vercel.json` e a função `api/vtex.js`. Basta importar o repositório em [vercel.com/new](https://vercel.com/new) (ou rodar `npx vercel`) — sem build, sem variáveis de ambiente. O link gerado já serve o PWA com HTTPS, o que faz o microfone funcionar direto no celular.
 
-```bash
-OPENROUTER_API_KEY=sk-or-... node server/server.js
-```
+**Onde ficam os dados:** tudo (lista, padrões, chave do OpenRouter) fica no **localStorage do seu navegador** — o servidor não guarda nada, então o mesmo deploy pode ser usado por outras pessoas sem ver seus dados. Para trocar de aparelho, use **Config → Exportar/Importar** backup.
 
-No celular: acesse o endereço do servidor pela rede local (ex.: `http://192.168.0.10:3000`) e use "Adicionar à tela inicial" — o app instala como PWA.
-
-> **Voz**: o reconhecimento usa a Web Speech API do Chrome (pt-BR). Em alguns navegadores o microfone exige HTTPS ou `localhost`; se for acessar pelo IP da rede, considere um túnel HTTPS (ex.: `cloudflared`, `ngrok`) ou ative a flag `unsafely-treat-insecure-origin-as-secure` do Chrome para o seu IP.
+No celular: abra o link e use "Adicionar à tela inicial" — o app instala como PWA.
 
 ## O que ele faz
 
@@ -52,20 +50,21 @@ No celular: acesse o endereço do servidor pela rede local (ex.: `http://192.168
 
 ## Dados e privacidade
 
-Tudo fica em `data/db.json` (ignorado pelo git): lista, catálogo aprendido, histórico e configurações — **incluindo sua chave do OpenRouter**, em texto plano. Mantenha o servidor em máquina sua/rede confiável, ou use a variável de ambiente. Nada é enviado a terceiros além das chamadas ao OpenRouter e às APIs públicas dos mercados.
+Todos os dados — lista, catálogo aprendido, histórico e configurações, **incluindo sua chave do OpenRouter** — ficam no localStorage do navegador, só no seu aparelho. As chamadas de IA vão direto do navegador para o OpenRouter (que suporta CORS); o servidor é apenas um proxy para a API pública dos mercados VTEX. Não compartilhe o aparelho/perfil do navegador onde a chave está salva.
 
 ## Estrutura
 
 ```
+public/              # o app inteiro roda aqui (navegador)
+  app.js             # UI: chat, voz, lista, cotações, padrões, config
+  store.js           # estado no localStorage + aprendizado de padrão
+  assistant.js       # interpretação de voz/texto e foto de produtos
+  quotes.js          # orquestração da cotação e propostas de carrinho
+  llm.js             # cliente do OpenRouter (direto do navegador)
+api/vtex.js          # função serverless (Vercel): proxy dos scrapers
 server/
-  server.js        # HTTP server + rotas da API (zero dependências)
-  assistant.js     # interpretação de voz/texto e ações na lista
-  patterns.js      # aprendizado de padrão de consumo
-  quotes.js        # orquestração da cotação e propostas de carrinho
-  openrouter.js    # cliente da API do OpenRouter
-  scrapers/        # vtex.js (scraper genérico) + stores.js (lojas)
-public/            # PWA: index.html, app.js, styles.css, sw.js, manifest
-data/db.json       # seus dados (criado no primeiro uso, fora do git)
+  server.js          # servidor local: estáticos + mesmo proxy /api/vtex
+  scrapers/          # vtex.js (scraper genérico) + stores.js (lojas)
 ```
 
 ## Limitações conhecidas

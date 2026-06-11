@@ -1,21 +1,14 @@
-/* Frontend do assistente de compras: voz (Web Speech API), chat, lista,
-   cotações e padrões. */
+/* UI do assistente de compras: voz (Web Speech API), chat, lista, cotações e
+   padrões. Toda a lógica e os dados rodam no navegador (ver store.js). */
 'use strict';
 
+import * as store from './store.js';
+import * as assistant from './assistant.js';
+import { generateQuote } from './quotes.js';
+
 const $ = (s) => document.querySelector(s);
-const state = { settings: null, list: [], patterns: [], suggestions: [], lastQuote: null };
 
 /* ---------- helpers ---------- */
-async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Erro ${res.status}`);
-  return data;
-}
 const brl = (v) => (typeof v === 'number' ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -40,7 +33,7 @@ function addBubble(text, cls) {
 }
 
 function speak(text) {
-  if (!state.settings?.falarRespostas || !('speechSynthesis' in window)) return;
+  if (!store.state.settings.falarRespostas || !('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'pt-BR';
   speechSynthesis.cancel();
@@ -53,11 +46,10 @@ async function sendMessage(text) {
   $('#msg-input').value = '';
   const thinking = addBubble('…', 'bot');
   try {
-    const r = await api('/api/assistant', { method: 'POST', body: { message: text } });
+    const r = await assistant.handleMessage(text.trim());
     thinking.textContent = r.reply;
     speak(r.reply);
-    state.list = r.list;
-    renderList();
+    renderAll();
     if (r.wantsQuote) {
       document.querySelector('nav button[data-tab="carrinhos"]').click();
       runQuote();
@@ -80,10 +72,7 @@ if (SR) {
   rec.interimResults = false;
   rec.maxAlternatives = 1;
   let listening = false;
-  rec.onresult = (e) => {
-    const text = e.results[0][0].transcript;
-    sendMessage(text);
-  };
+  rec.onresult = (e) => sendMessage(e.results[0][0].transcript);
   rec.onend = () => {
     listening = false;
     $('#btn-mic').classList.remove('listening');
@@ -121,17 +110,17 @@ $('#photo-input').addEventListener('change', async (e) => {
   addBubble('📷 Foto enviada, analisando o produto...', 'user');
   const thinking = addBubble('…', 'bot');
   try {
-    const { product } = await api('/api/photo', { method: 'POST', body: { image: dataUrl } });
+    const product = await assistant.analyzePhoto(dataUrl);
     const desc = [product.fullName || product.name, product.brand, product.package].filter(Boolean).join(' · ');
     thinking.textContent = `Identifiquei: ${desc}. Adicionar à lista?`;
     const btn = document.createElement('button');
     btn.textContent = '＋ Adicionar à lista';
     btn.className = 'primary';
     btn.style.marginTop = '8px';
-    btn.onclick = async () => {
-      await api('/api/list', { method: 'POST', body: product });
+    btn.onclick = () => {
+      store.addItem(product);
       btn.replaceWith(Object.assign(document.createElement('small'), { textContent: '✅ Adicionado.' }));
-      refresh();
+      renderAll();
     };
     thinking.appendChild(document.createElement('br'));
     thinking.appendChild(btn);
@@ -161,10 +150,10 @@ function resizeImage(file, maxDim) {
 function renderList() {
   const ul = $('#list');
   ul.innerHTML = '';
-  if (!state.list.length) {
+  if (!store.state.list.length) {
     ul.innerHTML = '<p class="muted">Lista vazia. Diga "acabou o arroz" no assistente ou adicione abaixo.</p>';
   }
-  for (const item of state.list) {
+  for (const item of store.state.list) {
     const li = document.createElement('li');
     li.className = 'item';
     li.innerHTML = `
@@ -176,39 +165,36 @@ function renderList() {
       <button class="minus" title="Diminuir">−</button>
       <button class="plus" title="Aumentar">＋</button>
       <button class="del" title="Remover">🗑️</button>`;
-    li.querySelector('.del').onclick = async () => {
-      const r = await api(`/api/list/${item.id}`, { method: 'DELETE' });
-      state.list = r.list;
+    li.querySelector('.del').onclick = () => {
+      store.removeItemById(item.id);
       renderList();
     };
-    li.querySelector('.plus').onclick = () => changeQty(item, 1);
-    li.querySelector('.minus').onclick = () => changeQty(item, -1);
+    li.querySelector('.plus').onclick = () => {
+      store.updateItem(item.id, { qty: (item.qty || 1) + 1 });
+      renderList();
+    };
+    li.querySelector('.minus').onclick = () => {
+      store.updateItem(item.id, { qty: Math.max(1, (item.qty || 1) - 1) });
+      renderList();
+    };
     ul.appendChild(li);
   }
 }
 
-async function changeQty(item, delta) {
-  const qty = Math.max(1, (item.qty || 1) + delta);
-  const r = await api(`/api/list/${item.id}`, { method: 'PATCH', body: { qty } });
-  state.list = r.list;
-  renderList();
-}
-
-$('#add-form').addEventListener('submit', async (e) => {
+$('#add-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const name = $('#add-name').value.trim();
   if (!name) return;
   $('#add-name').value = '';
-  const r = await api('/api/list', { method: 'POST', body: { name } });
-  state.list = r.list;
+  store.addItem({ name });
   renderList();
 });
 
-$('#btn-purchased').addEventListener('click', async () => {
-  if (!state.list.length) return;
+$('#btn-purchased').addEventListener('click', () => {
+  if (!store.state.list.length) return;
   if (!confirm('Marcar todos os itens como comprados? Isso alimenta seu padrão e limpa a lista.')) return;
-  await api('/api/purchased', { method: 'POST' });
-  refresh();
+  store.markPurchased();
+  renderAll();
 });
 
 /* ---------- cotação ---------- */
@@ -220,17 +206,19 @@ $('#btn-quote').addEventListener('click', () => {
 let quoting = false;
 async function runQuote() {
   if (quoting) return;
-  if (!state.list.length) {
+  if (!store.state.list.length) {
     $('#quote-result').innerHTML = '<p class="muted">A lista está vazia — adicione itens antes de cotar.</p>';
     return;
   }
   quoting = true;
   const st = $('#quote-status');
   st.classList.remove('hidden');
-  st.innerHTML = '<span class="spinner"></span>Buscando preços nas lojas e montando carrinhos... isso pode levar um minuto.';
+  const setProgress = (msg) => {
+    st.innerHTML = `<span class="spinner"></span>${esc(msg)}`;
+  };
+  setProgress('Buscando preços nas lojas... isso pode levar um minuto.');
   try {
-    const { quote } = await api('/api/quotes', { method: 'POST' });
-    state.lastQuote = quote;
+    const quote = await generateQuote(setProgress);
     renderQuote();
     speak(quote.summary || 'Cotação pronta.');
   } catch (e) {
@@ -242,7 +230,7 @@ async function runQuote() {
 }
 
 function renderQuote() {
-  const q = state.lastQuote;
+  const q = store.state.lastQuote;
   const box = $('#quote-result');
   if (!q) return;
   let html = `<p class="muted">Cotação de ${new Date(q.createdAt).toLocaleString('pt-BR')} · ${q.offersCollected} ofertas analisadas</p>`;
@@ -287,12 +275,13 @@ function renderQuote() {
 /* ---------- padrões ---------- */
 function renderPatterns() {
   const ul = $('#patterns');
+  const patterns = store.patternsSummary();
   ul.innerHTML = '';
-  if (!state.patterns.length) {
+  if (!patterns.length) {
     ul.innerHTML = '<p class="muted">Nada aprendido ainda. Use o assistente no dia a dia ("acabou o leite") e marque compras como feitas.</p>';
     return;
   }
-  for (const p of state.patterns) {
+  for (const p of patterns) {
     const li = document.createElement('li');
     li.className = 'pattern';
     const due =
@@ -310,77 +299,113 @@ function renderPatterns() {
 
 function renderDueBanner() {
   const b = $('#due-banner');
-  if (!state.suggestions.length) {
+  const suggestions = store.dueSuggestions();
+  if (!suggestions.length) {
     b.classList.add('hidden');
     return;
   }
   b.classList.remove('hidden');
-  b.textContent = `📌 Pelo seu padrão, deve estar acabando: ${state.suggestions.map((s) => s.name).join(', ')}. Diga "adiciona" ou toque aqui para incluir tudo.`;
-  b.onclick = async () => {
-    for (const s of state.suggestions) {
-      await api('/api/list', { method: 'POST', body: { name: s.name, brand: s.brand, package: s.package } });
+  b.textContent = `📌 Pelo seu padrão, deve estar acabando: ${suggestions.map((s) => s.name).join(', ')}. Toque aqui para incluir tudo na lista.`;
+  b.onclick = () => {
+    for (const s of suggestions) {
+      store.addItem({ name: s.name, brand: s.brand, package: s.package });
     }
-    refresh();
+    renderAll();
   };
 }
 
 /* ---------- config ---------- */
 function renderSettings() {
-  const s = state.settings;
+  const s = store.state.settings;
   $('#set-model').value = s.model;
   $('#set-vision').value = s.visionModel;
   $('#set-search').value = s.searchModel;
   $('#set-cidade').value = s.cidade || '';
   $('#set-cep').value = s.cep || '';
   $('#set-falar').checked = !!s.falarRespostas;
-  $('#key-state').textContent = s.hasKey
-    ? '✅ Chave configurada (deixe em branco para manter).'
+  $('#key-state').textContent = s.openrouterKey
+    ? '✅ Chave salva neste navegador (deixe em branco para manter).'
     : '❌ Nenhuma chave configurada — o assistente precisa dela para funcionar.';
-  $('#status-dot').classList.toggle('ok', s.hasKey);
+  $('#status-dot').classList.toggle('ok', !!s.openrouterKey);
 }
 
-$('#settings-form').addEventListener('submit', async (e) => {
+$('#settings-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  const body = {
-    model: $('#set-model').value.trim(),
-    visionModel: $('#set-vision').value.trim(),
-    searchModel: $('#set-search').value.trim(),
-    cidade: $('#set-cidade').value.trim(),
-    cep: $('#set-cep').value.trim(),
-    falarRespostas: $('#set-falar').checked
-  };
+  const s = store.state.settings;
+  s.model = $('#set-model').value.trim() || s.model;
+  s.visionModel = $('#set-vision').value.trim() || s.visionModel;
+  s.searchModel = $('#set-search').value.trim() || s.searchModel;
+  s.cidade = $('#set-cidade').value.trim();
+  s.cep = $('#set-cep').value.trim();
+  s.falarRespostas = $('#set-falar').checked;
   const key = $('#set-key').value.trim();
-  if (key) body.openrouterKey = key;
-  const r = await api('/api/settings', { method: 'PUT', body });
-  state.settings = r.settings;
+  if (key) s.openrouterKey = key;
+  store.save();
   $('#set-key').value = '';
   renderSettings();
-  $('#settings-saved').textContent = '✅ Salvo.';
+  $('#settings-saved').textContent = '✅ Salvo neste navegador.';
   setTimeout(() => ($('#settings-saved').textContent = ''), 2500);
 });
 
+/* ---------- backup ---------- */
+$('#btn-export').addEventListener('click', () => {
+  const blob = new Blob([store.exportJson()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `compras-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$('#btn-import').addEventListener('click', () => $('#import-input').click());
+$('#import-input').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  e.target.value = '';
+  try {
+    store.importJson(await file.text());
+    renderAll();
+    alert('✅ Backup importado.');
+  } catch (err) {
+    alert(`⚠️ ${err.message}`);
+  }
+});
+
 /* ---------- bootstrap ---------- */
-async function refresh() {
-  const s = await api('/api/state');
-  Object.assign(state, s);
+function renderAll() {
   renderList();
   renderPatterns();
   renderSettings();
   renderDueBanner();
-  if (state.lastQuote) renderQuote();
+  if (store.state.lastQuote) renderQuote();
 }
 
-refresh().then(() => {
-  if (!$('#chat').children.length) {
-    addBubble(
-      'Oi! Eu cuido das suas compras. Me diga coisas como:\n• "acabou o arroz"\n• "compra 2 sabão em pó OMO"\n• "monta o carrinho com os melhores preços"\nOu toque no 📷 para cadastrar um produto pela foto.',
-      'bot'
-    );
-    if (!state.settings?.hasKey) {
-      addBubble('⚙️ Antes de começar, cole sua chave do OpenRouter na aba Config.', 'info');
+async function migrateLegacy() {
+  // Versões antigas guardavam os dados no servidor local (data/db.json).
+  if (store.state.list.length || Object.keys(store.state.catalog).length) return;
+  try {
+    const res = await fetch('/api/legacy-state');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (store.adoptLegacy(data)) {
+      addBubble('📦 Importei seus dados antigos do servidor local.', 'info');
+      renderAll();
     }
+  } catch {
+    /* sem servidor legado — normal no deploy */
   }
-});
+}
+
+renderAll();
+migrateLegacy();
+
+addBubble(
+  'Oi! Eu cuido das suas compras. Me diga coisas como:\n• "acabou o arroz"\n• "compra 2 sabão em pó OMO"\n• "monta o carrinho com os melhores preços"\nOu toque no 📷 para cadastrar um produto pela foto.',
+  'bot'
+);
+if (!store.state.settings.openrouterKey) {
+  addBubble('⚙️ Antes de começar, cole sua chave do OpenRouter na aba Config.', 'info');
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});

@@ -1,19 +1,18 @@
-// Cliente mínimo da API do OpenRouter (compatível com chat/completions).
+// Cliente do OpenRouter direto do navegador: a chave fica no seu aparelho e
+// só trafega para a própria API do OpenRouter (que suporta CORS).
 'use strict';
 
-const db = require('./db');
+import { state } from './store.js';
 
 const BASE = 'https://openrouter.ai/api/v1/chat/completions';
 
-async function chat({ messages, model, json = false, maxTokens = 4096, temperature = 0.3 }) {
-  const key = db.apiKey();
+export async function chat({ messages, model, json = false, maxTokens = 4096, temperature = 0.3 }) {
+  const key = state.settings.openrouterKey;
   if (!key) {
-    const err = new Error('Chave do OpenRouter não configurada. Abra Configurações e cole sua chave (ou defina OPENROUTER_API_KEY).');
-    err.code = 'NO_KEY';
-    throw err;
+    throw new Error('Chave do OpenRouter não configurada. Abra a aba Config e cole sua chave.');
   }
   const body = {
-    model: model || db.get().settings.model,
+    model: model || state.settings.model,
     messages,
     max_tokens: maxTokens,
     temperature
@@ -32,7 +31,7 @@ async function chat({ messages, model, json = false, maxTokens = 4096, temperatu
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
+    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 300)}`);
   }
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
@@ -41,7 +40,7 @@ async function chat({ messages, model, json = false, maxTokens = 4096, temperatu
 }
 
 // Extrai JSON mesmo se o modelo devolver cercas de código ou texto em volta.
-function parseJson(text) {
+export function parseJson(text) {
   let t = String(text).trim();
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) t = fence[1].trim();
@@ -59,9 +58,7 @@ function parseJson(text) {
   }
 }
 
-async function chatJson(opts) {
+export async function chatJson(opts) {
   const content = await chat({ ...opts, json: true });
   return parseJson(content);
 }
-
-module.exports = { chat, chatJson, parseJson };

@@ -88,6 +88,13 @@
         <button type="submit" class="primary">Salvar</button>
         <small id="settings-saved" class="muted"></small>
       </form>
+      <h2 style="margin-top:24px">Backup dos dados</h2>
+      <p class="muted">Seus dados (lista, padrões, chave) ficam só neste navegador. Exporte um backup para trocar de aparelho.</p>
+      <div class="row-between">
+        <button id="btn-export" class="ghost" style="margin-top:0">⬇️ Exportar</button>
+        <button id="btn-import" class="ghost" style="margin-top:0">⬆️ Importar</button>
+        <input type="file" id="import-input" accept="application/json" hidden />
+      </div>
     </section>
   </main>
 
@@ -99,6 +106,6 @@
     <button data-tab="config">⚙️<span>Config</span></button>
   </nav>
 
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

@@ -1,7 +1,17 @@
 // Service worker: cache dos arquivos estáticos para abrir rápido/offline.
-// A API nunca é cacheada (dados sempre frescos).
-const CACHE = 'compras-v1';
-const ASSETS = ['/', '/styles.css', '/app.js', '/manifest.webmanifest', '/icon.svg'];
+// As rotas /api/ e chamadas externas (OpenRouter) nunca são cacheadas.
+const CACHE = 'compras-v2';
+const ASSETS = [
+  '/',
+  '/styles.css',
+  '/app.js',
+  '/store.js',
+  '/llm.js',
+  '/assistant.js',
+  '/quotes.js',
+  '/manifest.webmanifest',
+  '/icon.svg'
+];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
@@ -17,7 +27,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith('/api/') || e.request.method !== 'GET') return;
+  if (url.origin !== location.origin || url.pathname.startsWith('/api/') || e.request.method !== 'GET') return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

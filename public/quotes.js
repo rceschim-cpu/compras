@@ -1,14 +1,26 @@
-// Orquestração de cotação: coleta preços (scrapers VTEX + busca web via
-// OpenRouter) e pede ao modelo para compor propostas de carrinho com
-// alternativas mais baratas e/ou mais saudáveis.
+// Cotação no navegador: scrapers VTEX via proxy /api/vtex (CORS), busca web
+// via OpenRouter e composição das propostas de carrinho com alternativas.
 'use strict';
 
-const db = require('./db');
-const or = require('./openrouter');
-const { searchVtex } = require('./scrapers/vtex');
-const { STORES } = require('./scrapers/stores');
+import * as store from './store.js';
+import * as llm from './llm.js';
 
-// Executa promessas com limite de concorrência.
+// Espelho de server/scrapers/stores.js (o proxy só aceita ids desta lista).
+const VTEX_STORES = [
+  { id: 'carrefour', name: 'Carrefour Mercado' },
+  { id: 'sonda', name: 'Sonda Delivery' }
+];
+
+function itemQuery(item) {
+  return [item.name, item.brand, item.package].filter(Boolean).join(' ');
+}
+
+function webStoreNames() {
+  const base = ['Pão de Açúcar', 'Extra Mercado', 'Atacadão', 'Assaí Atacadista', 'iFood Mercado'];
+  const extra = (store.state.settings.lojasWeb || []).filter((n) => !base.includes(n));
+  return [...base, ...extra];
+}
+
 async function pool(tasks, limit = 4) {
   const results = [];
   let i = 0;
@@ -26,22 +38,21 @@ async function pool(tasks, limit = 4) {
   return results;
 }
 
-function itemQuery(item) {
-  return [item.name, item.brand, item.package].filter(Boolean).join(' ');
-}
-
 async function scrapePrices(items, progress) {
-  const vtexStores = STORES.filter((s) => s.type === 'vtex');
   const tasks = [];
-  for (const store of vtexStores) {
+  for (const vstore of VTEX_STORES) {
     for (const item of items) {
       tasks.push(async () => {
-        const offers = await searchVtex(store, itemQuery(item));
-        return { item: item.name, offers };
+        const res = await fetch(
+          `/api/vtex?store=${vstore.id}&q=${encodeURIComponent(itemQuery(item))}`
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `${vstore.name}: erro ${res.status}`);
+        return { item: item.name, offers: data.offers || [] };
       });
     }
   }
-  progress(`Consultando ${vtexStores.length} loja(s) com scraper direto...`);
+  progress(`Consultando ${VTEX_STORES.length} loja(s) com scraper direto...`);
   const res = await pool(tasks, 5);
   const offers = [];
   const errors = [];
@@ -52,20 +63,12 @@ async function scrapePrices(items, progress) {
   return { offers, errors: [...new Set(errors)] };
 }
 
-function webStoreNames() {
-  const s = db.get().settings;
-  const base = STORES.filter((x) => x.type === 'web').map((x) => x.name);
-  const extra = (s.lojasWeb || []).filter((n) => !base.includes(n));
-  return [...base, ...extra];
-}
-
 async function webPrices(items, progress) {
-  const s = db.get().settings;
+  const s = store.state.settings;
   const storeNames = webStoreNames();
   progress(`Pesquisando preços na web (${storeNames.slice(0, 4).join(', ')}...)`);
 
   const local = [s.cidade, s.cep && `CEP ${s.cep}`].filter(Boolean).join(', ');
-  // Em blocos pequenos a busca acha mais preços do que com a lista inteira de uma vez.
   const chunks = [];
   for (let i = 0; i < items.length; i += 5) chunks.push(items.slice(i, i + 5));
 
@@ -82,14 +85,13 @@ Responda SOMENTE com JSON no formato:
 Inclua apenas ofertas com preço encontrado de verdade na pesquisa; não invente preços. Se não encontrar nada, responda {"offers":[]}.`;
 
     try {
-      // sem response_format: alguns modelos de busca não aceitam JSON mode;
-      // o parse tolerante extrai o JSON da resposta.
-      const text = await or.chat({
+      // sem JSON mode: alguns modelos de busca não aceitam response_format
+      const text = await llm.chat({
         model: s.searchModel,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 8000
       });
-      const data = or.parseJson(text);
+      const data = llm.parseJson(text);
       for (const o of data.offers || []) {
         if (o.price > 0) offers.push({ ...o, source: 'web', available: true });
       }
@@ -104,11 +106,10 @@ Inclua apenas ofertas com preço encontrado de verdade na pesquisa; não invente
 }
 
 // Último recurso quando nada ao vivo funciona: o modelo estima preços típicos.
-// A cotação fica marcada como estimativa para o usuário conferir antes de comprar.
 async function estimatePrices(items, progress) {
-  const s = db.get().settings;
+  const s = store.state.settings;
   progress('Sem preços ao vivo — gerando estimativa pelo modelo...');
-  const data = await or.chatJson({
+  const data = await llm.chatJson({
     model: s.model,
     maxTokens: 8000,
     messages: [
@@ -131,7 +132,7 @@ Gere ofertas em pelo menos 2 lojas por item.`
 }
 
 async function composeProposals(items, offers, progress) {
-  const s = db.get().settings;
+  const s = store.state.settings;
   progress('Montando propostas de carrinho e alternativas...');
   const prompt = `Você é um assistente de compras de supermercado no Brasil. Com base na LISTA do usuário e nas OFERTAS coletadas (preços reais encontrados agora), monte propostas de carrinho.
 
@@ -150,7 +151,7 @@ Regras:
 "alternatives":[{"forItem":"...","suggestion":"frase da sugestão","product":"...","store":"...","price":0.0,"priceDiff":-2.0,"reason":"cheaper|healthier","link":null}],
 "summary":"resumo em 2-3 frases para ser falado em voz alta"}`;
 
-  return or.chatJson({
+  return llm.chatJson({
     model: s.model,
     messages: [{ role: 'user', content: prompt }],
     maxTokens: 8000,
@@ -158,8 +159,8 @@ Regras:
   });
 }
 
-async function generateQuote(progress = () => {}) {
-  const items = db.get().list;
+export async function generateQuote(progress = () => {}) {
+  const items = store.state.list;
   if (!items.length) throw new Error('A lista de compras está vazia.');
 
   const [scraped, web] = await Promise.all([
@@ -180,11 +181,12 @@ async function generateQuote(progress = () => {}) {
   }
   if (!offers.length) {
     throw new Error(
-      'Nenhum preço encontrado. ' + (errors.length ? `Erros: ${errors.join(' | ')}` : 'Verifique sua conexão e a chave do OpenRouter.')
+      'Nenhum preço encontrado. ' +
+        (errors.length ? `Erros: ${errors.join(' | ')}` : 'Verifique sua conexão e a chave do OpenRouter.')
     );
   }
   if (estimated) {
-    errors.push('Nenhuma fonte de preço ao vivo respondeu; os valores abaixo são ESTIMATIVAS do modelo.');
+    errors.push('Nenhuma fonte de preço ao vivo respondeu; os valores são ESTIMATIVAS do modelo.');
   }
 
   const result = await composeProposals(items, offers, progress);
@@ -198,10 +200,7 @@ async function generateQuote(progress = () => {}) {
     estimated,
     warnings: errors
   };
-  db.update((d) => {
-    d.lastQuote = quote;
-  });
+  store.state.lastQuote = quote;
+  store.save();
   return quote;
 }
-
-module.exports = { generateQuote };
