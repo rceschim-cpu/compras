@@ -1,0 +1,14 @@
+{
+  "name": "compras",
+  "version": "0.1.0",
+  "description": "Assistente de compras por voz: aprende seus padrões, monta listas e busca os melhores preços online via OpenRouter + scrapers de mercados.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

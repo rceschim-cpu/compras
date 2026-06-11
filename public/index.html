@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#16a34a" />
+  <title>Compras — Assistente</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>🛒 Compras</h1>
+    <span id="status-dot" title="Status da chave do OpenRouter"></span>
+  </header>
+
+  <main>
+    <!-- ABA: ASSISTENTE -->
+    <section id="tab-assistente" class="tab active">
+      <div id="chat"></div>
+      <div id="due-banner" class="banner hidden"></div>
+      <div class="composer">
+        <button id="btn-photo" title="Fotografar produto">📷</button>
+        <input type="file" id="photo-input" accept="image/*" capture="environment" hidden />
+        <input id="msg-input" type="text" placeholder='Ex.: "acabou o arroz"' autocomplete="off" />
+        <button id="btn-send" title="Enviar">➤</button>
+        <button id="btn-mic" title="Falar">🎙️</button>
+      </div>
+    </section>
+
+    <!-- ABA: LISTA -->
+    <section id="tab-lista" class="tab">
+      <div class="row-between">
+        <h2>Lista de compras</h2>
+        <button id="btn-quote" class="primary">💰 Cotar preços</button>
+      </div>
+      <ul id="list"></ul>
+      <form id="add-form" class="composer">
+        <input id="add-name" type="text" placeholder="Adicionar item..." autocomplete="off" />
+        <button type="submit">＋</button>
+      </form>
+      <button id="btn-purchased" class="ghost">✅ Marquei tudo como comprado</button>
+    </section>
+
+    <!-- ABA: CARRINHOS -->
+    <section id="tab-carrinhos" class="tab">
+      <h2>Propostas de carrinho</h2>
+      <div id="quote-status" class="hidden banner"></div>
+      <div id="quote-result"><p class="muted">Nenhuma cotação ainda. Monte sua lista e toque em "Cotar preços".</p></div>
+    </section>
+
+    <!-- ABA: PADRÕES -->
+    <section id="tab-padroes" class="tab">
+      <h2>Seu padrão de compras</h2>
+      <p class="muted">O app aprende a frequência de cada item conforme você diz "acabou" e marca compras feitas.</p>
+      <ul id="patterns"></ul>
+    </section>
+
+    <!-- ABA: CONFIG -->
+    <section id="tab-config" class="tab">
+      <h2>Configurações</h2>
+      <form id="settings-form">
+        <label>Chave do OpenRouter
+          <input id="set-key" type="password" placeholder="sk-or-..." autocomplete="off" />
+          <small id="key-state" class="muted"></small>
+        </label>
+        <label>Modelo principal (texto)
+          <input id="set-model" type="text" />
+        </label>
+        <label>Modelo de visão (fotos)
+          <input id="set-vision" type="text" />
+        </label>
+        <label>Modelo com busca web (preços)
+          <input id="set-search" type="text" />
+          <small class="muted">Dica: qualquer modelo do OpenRouter com sufixo <code>:online</code> pesquisa na web.</small>
+        </label>
+        <label>Cidade
+          <input id="set-cidade" type="text" placeholder="ex.: Curitiba - PR" />
+        </label>
+        <label>CEP (para entrega/preço regional)
+          <input id="set-cep" type="text" placeholder="00000-000" />
+        </label>
+        <label class="check">
+          <input id="set-falar" type="checkbox" /> Falar as respostas em voz alta
+        </label>
+        <button type="submit" class="primary">Salvar</button>
+        <small id="settings-saved" class="muted"></small>
+      </form>
+    </section>
+  </main>
+
+  <nav>
+    <button data-tab="assistente" class="active">🎙️<span>Assistente</span></button>
+    <button data-tab="lista">📝<span>Lista</span></button>
+    <button data-tab="carrinhos">🛒<span>Carrinhos</span></button>
+    <button data-tab="padroes">📈<span>Padrões</span></button>
+    <button data-tab="config">⚙️<span>Config</span></button>
+  </nav>
+
+  <script src="/app.js"></script>
+</body>
+</html>
