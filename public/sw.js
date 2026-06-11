@@ -1,6 +1,6 @@
 // Service worker: cache dos arquivos estáticos para abrir rápido/offline.
 // As rotas /api/ e chamadas externas (OpenRouter) nunca são cacheadas.
-const CACHE = 'compras-v3';
+const CACHE = 'compras-v4';
 const ASSETS = [
   '/',
   '/styles.css',

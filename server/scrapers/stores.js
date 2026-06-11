@@ -5,6 +5,7 @@
 
 const STORES = [
   { id: 'carrefour', name: 'Carrefour Mercado', base: 'https://mercado.carrefour.com.br', type: 'vtex' },
+  { id: 'condor', name: 'Condor', base: 'https://www.condor.com.br', type: 'vtex' },
   { id: 'sonda', name: 'Sonda Delivery', base: 'https://www.sondadelivery.com.br', type: 'vtex' },
   { id: 'paodeacucar', name: 'Pão de Açúcar', type: 'web' },
   { id: 'extra', name: 'Extra Mercado', type: 'web' },

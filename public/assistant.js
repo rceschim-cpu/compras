@@ -82,7 +82,8 @@ export async function handleMessage(message) {
   return { reply, wantsQuote };
 }
 
-// Foto de nota/cupom fiscal -> modelo de visão extrai a compra inteira.
+// Foto de nota/cupom fiscal OU print de pedido online (histórico de compras
+// do site/app do mercado, ex. Condor) -> modelo de visão extrai a compra.
 export async function analyzeReceipt(dataUrl) {
   const data = await llm.chatJson({
     model: store.state.settings.visionModel,
@@ -93,11 +94,11 @@ export async function analyzeReceipt(dataUrl) {
         content: [
           {
             type: 'text',
-            text: `Esta é a foto de uma nota ou cupom fiscal de supermercado brasileiro. Extraia a compra e responda SOMENTE com JSON:
+            text: `Esta imagem é uma compra de supermercado brasileiro: foto de nota/cupom fiscal OU print (captura de tela) do detalhe de um pedido no site/app do mercado. Extraia a compra e responda SOMENTE com JSON:
 {"store":"nome do mercado","date":"data da compra em YYYY-MM-DD, ou null se ilegível","total":123.45,
  "items":[{"name":"nome genérico em minúsculas (ex: arroz, batata palha)","brand":"marca se identificável, senão null","package":"peso/tamanho se visível (ex: 5kg), senão null","qty":1,"unitPrice":12.34}]}
 
-Importante: descrições de cupom são abreviadas — expanda (ex: "ARR TIO JOAO T1 5KG" => name "arroz", brand "Tio João", package "5kg"; "REFRI CC 2L" => name "refrigerante", brand "Coca-Cola", package "2L"). qty é a quantidade comprada e unitPrice o preço unitário em reais. Liste só produtos; ignore taxas, descontos gerais e linhas de total. Se a imagem não for uma nota fiscal, responda {"items":[]}.`
+Importante: descrições de cupom são abreviadas — expanda (ex: "ARR TIO JOAO T1 5KG" => name "arroz", brand "Tio João", package "5kg"; "REFRI CC 2L" => name "refrigerante", brand "Coca-Cola", package "2L"). qty é a quantidade comprada e unitPrice o preço unitário em reais. Liste só produtos; ignore taxas de entrega, descontos gerais e linhas de total. Se aparecerem vários pedidos, extraia apenas o mais recente/completo. Se a imagem não for uma compra de mercado, responda {"items":[]}.`
           },
           { type: 'image_url', image_url: { url: dataUrl } }
         ]
@@ -105,7 +106,7 @@ Importante: descrições de cupom são abreviadas — expanda (ex: "ARR TIO JOAO
     ]
   });
   if (!data.items?.length) {
-    throw new Error('Não consegui ler itens nessa foto. Tente com mais luz e a nota esticada — ou foto por partes, em notas longas.');
+    throw new Error('Não consegui ler itens nessa imagem. Para nota de papel: mais luz e nota esticada (ou por partes). Para pedido online: print do detalhe do pedido, com os itens visíveis.');
   }
   return data;
 }

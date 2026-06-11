@@ -8,6 +8,7 @@ import * as llm from './llm.js';
 // Espelho de server/scrapers/stores.js (o proxy só aceita ids desta lista).
 const VTEX_STORES = [
   { id: 'carrefour', name: 'Carrefour Mercado' },
+  { id: 'condor', name: 'Condor' },
   { id: 'sonda', name: 'Sonda Delivery' }
 ];
 
@@ -16,7 +17,7 @@ function itemQuery(item) {
 }
 
 function webStoreNames() {
-  const base = ['Pão de Açúcar', 'Extra Mercado', 'Atacadão', 'Assaí Atacadista', 'iFood Mercado'];
+  const base = ['Condor', 'Pão de Açúcar', 'Extra Mercado', 'Atacadão', 'Assaí Atacadista', 'iFood Mercado'];
   const extra = (store.state.settings.lojasWeb || []).filter((n) => !base.includes(n));
   return [...base, ...extra];
 }
