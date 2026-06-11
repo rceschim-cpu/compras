@@ -82,6 +82,34 @@ export async function handleMessage(message) {
   return { reply, wantsQuote };
 }
 
+// Foto de nota/cupom fiscal -> modelo de visão extrai a compra inteira.
+export async function analyzeReceipt(dataUrl) {
+  const data = await llm.chatJson({
+    model: store.state.settings.visionModel,
+    maxTokens: 6000,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Esta é a foto de uma nota ou cupom fiscal de supermercado brasileiro. Extraia a compra e responda SOMENTE com JSON:
+{"store":"nome do mercado","date":"data da compra em YYYY-MM-DD, ou null se ilegível","total":123.45,
+ "items":[{"name":"nome genérico em minúsculas (ex: arroz, batata palha)","brand":"marca se identificável, senão null","package":"peso/tamanho se visível (ex: 5kg), senão null","qty":1,"unitPrice":12.34}]}
+
+Importante: descrições de cupom são abreviadas — expanda (ex: "ARR TIO JOAO T1 5KG" => name "arroz", brand "Tio João", package "5kg"; "REFRI CC 2L" => name "refrigerante", brand "Coca-Cola", package "2L"). qty é a quantidade comprada e unitPrice o preço unitário em reais. Liste só produtos; ignore taxas, descontos gerais e linhas de total. Se a imagem não for uma nota fiscal, responda {"items":[]}.`
+          },
+          { type: 'image_url', image_url: { url: dataUrl } }
+        ]
+      }
+    ]
+  });
+  if (!data.items?.length) {
+    throw new Error('Não consegui ler itens nessa foto. Tente com mais luz e a nota esticada — ou foto por partes, em notas longas.');
+  }
+  return data;
+}
+
 // Foto de produto -> modelo de visão extrai nome, marca, embalagem, ingredientes.
 export async function analyzePhoto(dataUrl) {
   const data = await llm.chatJson({

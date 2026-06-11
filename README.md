@@ -26,6 +26,7 @@ No celular: abra o link e use "Adicionar à tela inicial" — o app instala como
 | "Acabou o arroz" | Registra o evento, adiciona arroz à lista (já com a marca/embalagem que você costuma comprar) |
 | "Compra 2 sabão em pó OMO" | Adiciona com quantidade e marca |
 | 📷 foto do produto | Modelo de visão extrai nome, marca, embalagem e ingredientes e cadastra no seu catálogo |
+| 🧾 escanear nota fiscal (aba Padrões) | Lê o cupom inteiro de uma vez: registra todos os itens como comprados na data da nota, com o preço pago — o jeito mais rápido de ensinar seu padrão |
 | "Monta o carrinho" / botão **Cotar preços** | Busca preços (scraper + web), monta até 3 propostas de carrinho por loja, com totais e links |
 | "Marquei tudo como comprado" | Alimenta o histórico — é assim que o padrão é aprendido |
 

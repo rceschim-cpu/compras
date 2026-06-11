@@ -131,6 +131,7 @@ export function patternsSummary() {
       timesSeen: c.history.length,
       avgIntervalDays: c.avgIntervalDays || null,
       lastEvent: last,
+      lastPrice: c.prices?.length ? c.prices[c.prices.length - 1] : null,
       dueInDays
     };
   });
@@ -224,6 +225,34 @@ export function markPurchased() {
   state.list = [];
   save();
   return items.length;
+}
+
+// Registra uma nota fiscal escaneada: cada item vira evento "comprado" na
+// data da nota, com preço pago guardado no catálogo; itens correspondentes
+// saem da lista atual (já foram comprados).
+export function applyReceipt(receipt) {
+  let date = new Date().toISOString();
+  if (receipt.date && !isNaN(Date.parse(receipt.date))) {
+    date = new Date(receipt.date).toISOString();
+  }
+  let count = 0;
+  for (const it of receipt.items || []) {
+    if (!it.name) continue;
+    const entry = recordEvent(
+      { name: it.name, brand: it.brand, package: it.package, category: it.category },
+      'purchased',
+      date
+    );
+    if (entry && it.unitPrice > 0) {
+      entry.prices = entry.prices || [];
+      entry.prices.push({ date, store: receipt.store || null, price: it.unitPrice });
+      if (entry.prices.length > 50) entry.prices = entry.prices.slice(-50);
+    }
+    removeItem(it.name);
+    count++;
+  }
+  save();
+  return count;
 }
 
 export function pushChat(user, assistant) {

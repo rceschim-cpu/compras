@@ -272,6 +272,66 @@ function renderQuote() {
   box.innerHTML = html;
 }
 
+/* ---------- nota fiscal ---------- */
+$('#btn-receipt').addEventListener('click', () => $('#receipt-input').click());
+$('#receipt-input').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  e.target.value = '';
+  const box = $('#receipt-review');
+  box.classList.remove('hidden');
+  box.innerHTML = '<div class="banner"><span class="spinner"></span>Lendo a nota fiscal...</div>';
+  try {
+    // resolução maior que a foto de produto: letras de cupom são pequenas
+    const dataUrl = await resizeImage(file, 1600);
+    const receipt = await assistant.analyzeReceipt(dataUrl);
+    renderReceiptReview(receipt);
+  } catch (err) {
+    box.innerHTML = `<div class="banner warn">⚠️ ${esc(err.message)}</div>`;
+  }
+});
+
+function renderReceiptReview(receipt) {
+  const box = $('#receipt-review');
+  const when = receipt.date && !isNaN(Date.parse(receipt.date))
+    ? new Date(receipt.date).toLocaleDateString('pt-BR')
+    : 'hoje';
+  box.innerHTML = `
+    <div class="proposal">
+      <h3><span>🧾 ${esc(receipt.store || 'Mercado')}</span><span class="muted">${esc(when)}</span></h3>
+      <p class="muted">Confira o que foi lido e desmarque o que não quiser registrar:</p>
+      <table>${receipt.items
+        .map(
+          (i, idx) => `<tr>
+            <td><label class="check" style="margin:0"><input type="checkbox" data-idx="${idx}" checked />
+              ${esc(i.qty || 1)}x ${esc([i.name, i.brand, i.package].filter(Boolean).join(' '))}</label></td>
+            <td class="price">${brl(i.unitPrice)}</td>
+          </tr>`
+        )
+        .join('')}</table>
+      <div class="row-between" style="margin-top:12px">
+        <button id="receipt-cancel" class="ghost" style="margin:0">Cancelar</button>
+        <button id="receipt-confirm" class="primary">✅ Registrar compra</button>
+      </div>
+    </div>`;
+  $('#receipt-cancel').onclick = () => {
+    box.classList.add('hidden');
+    box.innerHTML = '';
+  };
+  $('#receipt-confirm').onclick = () => {
+    const checked = [...box.querySelectorAll('input[type="checkbox"]:checked')].map(
+      (c) => receipt.items[Number(c.dataset.idx)]
+    );
+    const count = store.applyReceipt({ ...receipt, items: checked });
+    box.innerHTML = `<div class="banner">✅ ${count} item(ns) registrados no histórico${receipt.store ? ` (${esc(receipt.store)})` : ''}. Seu padrão de compras ficou mais preciso.</div>`;
+    setTimeout(() => {
+      box.classList.add('hidden');
+      box.innerHTML = '';
+    }, 4000);
+    renderAll();
+  };
+}
+
 /* ---------- padrões ---------- */
 function renderPatterns() {
   const ul = $('#patterns');
@@ -290,9 +350,12 @@ function renderPatterns() {
         : p.dueInDays <= 0
           ? '<span class="due now">deve ter acabado</span>'
           : `<span class="due">acaba em ~${p.dueInDays} dia(s)</span>`;
+    const paid = p.lastPrice
+      ? ` · pagou ${brl(p.lastPrice.price)}${p.lastPrice.store ? ` (${esc(p.lastPrice.store)})` : ''}`
+      : '';
     li.innerHTML = `
       <div class="name">${esc(p.name)} <span class="muted">${esc([p.brand, p.package].filter(Boolean).join(' · '))}</span></div>
-      <div class="detail muted">${p.timesSeen} registro(s)${p.avgIntervalDays ? ` · repõe a cada ~${p.avgIntervalDays} dias` : ''} · ${due}</div>`;
+      <div class="detail muted">${p.timesSeen} registro(s)${p.avgIntervalDays ? ` · repõe a cada ~${p.avgIntervalDays} dias` : ''}${paid} · ${due}</div>`;
     ul.appendChild(li);
   }
 }
