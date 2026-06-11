@@ -52,34 +52,82 @@ async function scrapePrices(items, progress) {
   return { offers, errors: [...new Set(errors)] };
 }
 
+function webStoreNames() {
+  const s = db.get().settings;
+  const base = STORES.filter((x) => x.type === 'web').map((x) => x.name);
+  const extra = (s.lojasWeb || []).filter((n) => !base.includes(n));
+  return [...base, ...extra];
+}
+
 async function webPrices(items, progress) {
   const s = db.get().settings;
-  const webStores = STORES.filter((x) => x.type === 'web').map((x) => x.name);
-  const extra = (s.lojasWeb || []).filter((n) => !webStores.includes(n));
-  const storeNames = [...webStores, ...extra];
+  const storeNames = webStoreNames();
   progress(`Pesquisando preços na web (${storeNames.slice(0, 4).join(', ')}...)`);
 
   const local = [s.cidade, s.cep && `CEP ${s.cep}`].filter(Boolean).join(', ');
-  const prompt = `Pesquise na web os preços ATUAIS (hoje) dos produtos abaixo em supermercados online brasileiros, priorizando: ${storeNames.join(', ')}.${local ? ` Região do comprador: ${local}.` : ''}
+  // Em blocos pequenos a busca acha mais preços do que com a lista inteira de uma vez.
+  const chunks = [];
+  for (let i = 0; i < items.length; i += 5) chunks.push(items.slice(i, i + 5));
+
+  const offers = [];
+  const errors = [];
+  for (const [ci, chunk] of chunks.entries()) {
+    const prompt = `Pesquise na web os preços ATUAIS (hoje) dos produtos abaixo em supermercados online brasileiros, priorizando: ${storeNames.join(', ')}.${local ? ` Região do comprador: ${local}.` : ''}
+
+Produtos:
+${chunk.map((i) => `- ${itemQuery(i)} (qtd: ${i.qty || 1})`).join('\n')}
+
+Responda SOMENTE com JSON no formato:
+{"offers":[{"store":"nome da loja","product":"nome completo do produto","brand":"marca","price":12.34,"link":"url ou null","forItem":"nome do item da lista correspondente"}]}
+Inclua apenas ofertas com preço encontrado de verdade na pesquisa; não invente preços. Se não encontrar nada, responda {"offers":[]}.`;
+
+    try {
+      // sem response_format: alguns modelos de busca não aceitam JSON mode;
+      // o parse tolerante extrai o JSON da resposta.
+      const text = await or.chat({
+        model: s.searchModel,
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 8000
+      });
+      const data = or.parseJson(text);
+      for (const o of data.offers || []) {
+        if (o.price > 0) offers.push({ ...o, source: 'web', available: true });
+      }
+    } catch (e) {
+      errors.push(`Busca web${chunks.length > 1 ? ` (parte ${ci + 1})` : ''}: ${e.message}`);
+    }
+  }
+  if (!offers.length && !errors.length) {
+    errors.push('A busca web não retornou preços — experimente outro modelo de busca na aba Config (ex.: perplexity/sonar).');
+  }
+  return { offers, errors };
+}
+
+// Último recurso quando nada ao vivo funciona: o modelo estima preços típicos.
+// A cotação fica marcada como estimativa para o usuário conferir antes de comprar.
+async function estimatePrices(items, progress) {
+  const s = db.get().settings;
+  progress('Sem preços ao vivo — gerando estimativa pelo modelo...');
+  const data = await or.chatJson({
+    model: s.model,
+    maxTokens: 8000,
+    messages: [
+      {
+        role: 'user',
+        content: `Estime o preço típico ATUAL no Brasil${s.cidade ? ` (região de ${s.cidade})` : ''} dos produtos abaixo nestes mercados: ${webStoreNames().join(', ')}. Use valores realistas de supermercado online; diferencie atacarejo (mais barato) de rede premium.
 
 Produtos:
 ${items.map((i) => `- ${itemQuery(i)} (qtd: ${i.qty || 1})`).join('\n')}
 
-Responda SOMENTE com JSON no formato:
-{"offers":[{"store":"nome da loja","product":"nome completo do produto","brand":"marca","price":12.34,"link":"url ou null","forItem":"nome do item da lista correspondente"}]}
-Inclua apenas ofertas com preço encontrado de verdade na pesquisa; não invente preços.`;
-
-  try {
-    const data = await or.chatJson({
-      model: s.searchModel,
-      messages: [{ role: 'user', content: prompt }],
-      maxTokens: 8000
-    });
-    const offers = (data.offers || []).filter((o) => o.price > 0);
-    return { offers: offers.map((o) => ({ ...o, source: 'web', available: true })), errors: [] };
-  } catch (e) {
-    return { offers: [], errors: [`Busca web: ${e.message}`] };
-  }
+Responda SOMENTE com JSON:
+{"offers":[{"store":"...","product":"...","brand":"...","price":12.34,"link":null,"forItem":"item da lista"}]}
+Gere ofertas em pelo menos 2 lojas por item.`
+      }
+    ]
+  });
+  return (data.offers || [])
+    .filter((o) => o.price > 0)
+    .map((o) => ({ ...o, source: 'estimativa', available: true }));
 }
 
 async function composeProposals(items, offers, progress) {
@@ -118,12 +166,25 @@ async function generateQuote(progress = () => {}) {
     scrapePrices(items, progress),
     webPrices(items, progress)
   ]);
-  const offers = [...scraped.offers, ...web.offers];
+  let offers = [...scraped.offers, ...web.offers];
   const errors = [...scraped.errors, ...web.errors];
+  let estimated = false;
+
+  if (!offers.length) {
+    try {
+      offers = await estimatePrices(items, progress);
+      estimated = offers.length > 0;
+    } catch (e) {
+      errors.push(`Estimativa: ${e.message}`);
+    }
+  }
   if (!offers.length) {
     throw new Error(
       'Nenhum preço encontrado. ' + (errors.length ? `Erros: ${errors.join(' | ')}` : 'Verifique sua conexão e a chave do OpenRouter.')
     );
+  }
+  if (estimated) {
+    errors.push('Nenhuma fonte de preço ao vivo respondeu; os valores abaixo são ESTIMATIVAS do modelo.');
   }
 
   const result = await composeProposals(items, offers, progress);
@@ -134,6 +195,7 @@ async function generateQuote(progress = () => {}) {
     alternatives: result.alternatives || [],
     summary: result.summary || '',
     offersCollected: offers.length,
+    estimated,
     warnings: errors
   };
   db.update((d) => {

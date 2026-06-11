@@ -13,7 +13,7 @@ const DEFAULTS = {
     openrouterKey: '',            // pode também vir da env OPENROUTER_API_KEY
     model: 'openai/gpt-4o-mini',  // modelo p/ entender voz/texto e compor carrinhos
     visionModel: 'openai/gpt-4o-mini', // modelo p/ ler fotos de produtos
-    searchModel: 'openai/gpt-4o-mini:online', // modelo com busca web (sufixo :online do OpenRouter)
+    searchModel: 'perplexity/sonar', // modelo especializado em busca web (ou qualquer modelo com sufixo :online)
     cep: '',
     cidade: '',
     lojasWeb: ['Atacadão', 'Assaí', 'Pão de Açúcar', 'Extra', 'iFood Mercado'],
@@ -45,6 +45,10 @@ function load() {
   }
   for (const k of Object.keys(DEFAULTS.settings)) {
     if (cache.settings[k] === undefined) cache.settings[k] = structuredClone(DEFAULTS.settings[k]);
+  }
+  // migração: o padrão antigo de busca achava poucos preços
+  if (cache.settings.searchModel === 'openai/gpt-4o-mini:online') {
+    cache.settings.searchModel = DEFAULTS.settings.searchModel;
   }
   return cache;
 }

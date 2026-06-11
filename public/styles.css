@@ -52,6 +52,7 @@ h2 { font-size: 1.05rem; margin: 4px 0 12px; }
   background: var(--card2); border-left: 4px solid var(--accent2);
   padding: 10px 12px; border-radius: 8px; margin: 10px 0; font-size: 0.9rem;
 }
+.banner.warn { border-left-color: #eab308; }
 
 /* composer */
 .composer { display: flex; gap: 8px; position: sticky; bottom: 0; padding-top: 8px; }

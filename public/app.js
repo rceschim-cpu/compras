@@ -246,6 +246,9 @@ function renderQuote() {
   const box = $('#quote-result');
   if (!q) return;
   let html = `<p class="muted">Cotação de ${new Date(q.createdAt).toLocaleString('pt-BR')} · ${q.offersCollected} ofertas analisadas</p>`;
+  if (q.estimated) {
+    html += '<div class="banner warn">⚠️ Nenhuma fonte de preço ao vivo respondeu — os valores abaixo são <b>estimativas</b> do modelo. Confirme nos sites das lojas antes de comprar.</div>';
+  }
   if (q.summary) html += `<div class="banner">${esc(q.summary)}</div>`;
 
   for (const p of q.proposals || []) {

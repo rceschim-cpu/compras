@@ -15,7 +15,16 @@ async function searchVtex(store, query, limit = 6) {
     },
     signal: AbortSignal.timeout(15000)
   });
-  if (!res.ok) throw new Error(`${store.name}: HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new Error(
+      `${store.name}: HTTP ${res.status}` +
+        (res.status === 403 || res.status === 503 ? ' (a loja bloqueou a consulta automática)' : '')
+    );
+  }
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('json')) {
+    throw new Error(`${store.name}: respondeu com página em vez de dados (provável bloqueio anti-bot)`);
+  }
   const products = await res.json();
   if (!Array.isArray(products)) return [];
 

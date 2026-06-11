@@ -47,7 +47,7 @@ No celular: acesse o endereço do servidor pela rede local (ex.: `http://192.168
 ## Configuração (aba ⚙️)
 
 - **Chave do OpenRouter** — obrigatória ([openrouter.ai/keys](https://openrouter.ai/keys)).
-- **Modelos** — padrões: `openai/gpt-4o-mini` (texto e visão) e `openai/gpt-4o-mini:online` (busca de preços). Troque por qualquer modelo do OpenRouter; para a busca, mantenha o sufixo `:online`.
+- **Modelos** — padrões: `openai/gpt-4o-mini` (texto e visão) e `perplexity/sonar` (busca de preços, especializado em pesquisa web). Troque por qualquer modelo do OpenRouter; para a busca, use um modelo de pesquisa ou o sufixo `:online`.
 - **Cidade/CEP** — melhora a precisão regional dos preços.
 
 ## Dados e privacidade
@@ -72,4 +72,13 @@ data/db.json       # seus dados (criado no primeiro uso, fora do git)
 
 - Os preços de busca web dependem do que o modelo encontra publicamente; confira antes de fechar a compra (cada item tem link quando disponível).
 - O app monta a **proposta** de carrinho; a finalização da compra é feita no site/app da loja pelos links.
-- Scrapers podem quebrar se a loja mudar de plataforma — nesse caso a loja continua coberta pela busca web.
+- Scrapers podem ser bloqueados por proteção anti-bot da loja (HTTP 403/503) — nesse caso a loja continua coberta pela busca web.
+- Se **nenhuma** fonte ao vivo responder, o app gera uma cotação com **preços estimados** pelo modelo, claramente sinalizada com ⚠️ — use como ordem de grandeza, não como preço final.
+
+## Problemas comuns
+
+| Sintoma | Causa e solução |
+|---|---|
+| "Carrefour Mercado: HTTP 403/503" | A loja bloqueou a consulta automática naquele momento. É só um aviso — a cotação segue pela busca web. |
+| Busca web não acha preços | Troque o "Modelo com busca web" na Config para `perplexity/sonar` e confira se sua conta OpenRouter tem créditos. |
+| Cotação veio marcada como estimativa | Nenhuma fonte ao vivo respondeu; tente de novo mais tarde ou ajuste o modelo de busca. |
