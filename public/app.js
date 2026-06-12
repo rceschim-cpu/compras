@@ -272,7 +272,7 @@ function renderQuote() {
   box.innerHTML = html;
 }
 
-/* ---------- nota fiscal ---------- */
+/* ---------- nota fiscal / pedido ---------- */
 $('#btn-receipt').addEventListener('click', () => $('#receipt-input').click());
 $('#receipt-input').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
@@ -280,16 +280,63 @@ $('#receipt-input').addEventListener('change', async (e) => {
   e.target.value = '';
   const box = $('#receipt-review');
   box.classList.remove('hidden');
-  box.innerHTML = '<div class="banner"><span class="spinner"></span>Lendo a nota fiscal...</div>';
+  box.innerHTML = '<div class="banner"><span class="spinner"></span>Lendo a compra...</div>';
   try {
-    // resolução maior que a foto de produto: letras de cupom são pequenas
-    const dataUrl = await resizeImage(file, 1600);
-    const receipt = await assistant.analyzeReceipt(dataUrl);
+    const { images, truncated } = await prepareReceiptImages(file);
+    if (images.length > 1) {
+      box.innerHTML = `<div class="banner"><span class="spinner"></span>Print longo: lendo em ${images.length} partes...</div>`;
+    }
+    const receipt = await assistant.analyzeReceipt(images);
+    receipt.truncated = truncated;
     renderReceiptReview(receipt);
   } catch (err) {
     box.innerHTML = `<div class="banner warn">⚠️ ${esc(err.message)}</div>`;
   }
 });
+
+function loadImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function drawSlice(img, srcY, srcH, maxW) {
+  const scale = Math.min(1, maxW / img.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(srcH * scale);
+  canvas.getContext('2d').drawImage(img, 0, srcY, img.width, srcH, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+// Capturas longas (histórico de pedidos rolado) viram ilegíveis se forçadas
+// num único quadro — fatia em partes com leve sobreposição, cada uma legível.
+async function prepareReceiptImages(file) {
+  const img = await loadImageFile(file);
+  if (img.height / img.width <= 2.2) {
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { images: [canvas.toDataURL('image/jpeg', 0.85)], truncated: false };
+  }
+  const MAX_SLICES = 10;
+  const sliceH = Math.round(img.width * 1.4);
+  const step = Math.round(sliceH * 0.94); // ~6% de sobreposição entre fatias
+  const images = [];
+  let y = 0;
+  while (y < img.height && images.length < MAX_SLICES) {
+    const h = Math.min(sliceH, img.height - y);
+    images.push(drawSlice(img, y, h, 1280));
+    if (y + h >= img.height) break;
+    y += step;
+  }
+  return { images, truncated: y < img.height && images.length >= MAX_SLICES };
+}
 
 function renderReceiptReview(receipt) {
   const box = $('#receipt-review');
@@ -299,7 +346,8 @@ function renderReceiptReview(receipt) {
   box.innerHTML = `
     <div class="proposal">
       <h3><span>🧾 ${esc(receipt.store || 'Mercado')}</span><span class="muted">${esc(when)}</span></h3>
-      <p class="muted">Confira o que foi lido e desmarque o que não quiser registrar:</p>
+      <p class="muted">${receipt.items.length} item(ns) lidos — confira e desmarque o que não quiser registrar:</p>
+      ${receipt.truncated ? '<p class="muted">⚠️ O print era muito longo e só li o começo. Envie o restante em outro print.</p>' : ''}
       <table>${receipt.items
         .map(
           (i, idx) => `<tr>

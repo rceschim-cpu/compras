@@ -238,14 +238,17 @@ export function applyReceipt(receipt) {
   let count = 0;
   for (const it of receipt.items || []) {
     if (!it.name) continue;
+    // históricos de compras podem trazer uma data por item
+    const itemDate =
+      it.date && !isNaN(Date.parse(it.date)) ? new Date(it.date).toISOString() : date;
     const entry = recordEvent(
       { name: it.name, brand: it.brand, package: it.package, category: it.category },
       'purchased',
-      date
+      itemDate
     );
     if (entry && it.unitPrice > 0) {
       entry.prices = entry.prices || [];
-      entry.prices.push({ date, store: receipt.store || null, price: it.unitPrice });
+      entry.prices.push({ date: itemDate, store: receipt.store || null, price: it.unitPrice });
       if (entry.prices.length > 50) entry.prices = entry.prices.slice(-50);
     }
     removeItem(it.name);

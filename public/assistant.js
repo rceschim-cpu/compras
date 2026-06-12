@@ -82,31 +82,38 @@ export async function handleMessage(message) {
   return { reply, wantsQuote };
 }
 
-// Foto de nota/cupom fiscal OU print de pedido online (histórico de compras
-// do site/app do mercado, ex. Condor) -> modelo de visão extrai a compra.
-export async function analyzeReceipt(dataUrl) {
+// Foto de nota/cupom fiscal OU print de pedido/histórico de compras do
+// site/app do mercado (ex. Condor). Prints longos chegam fatiados em várias
+// imagens sequenciais (de cima para baixo, com pequena sobreposição).
+export async function analyzeReceipt(dataUrls) {
+  const urls = Array.isArray(dataUrls) ? dataUrls : [dataUrls];
   const data = await llm.chatJson({
     model: store.state.settings.visionModel,
-    maxTokens: 6000,
+    maxTokens: 8000,
     messages: [
       {
         role: 'user',
         content: [
           {
             type: 'text',
-            text: `Esta imagem é uma compra de supermercado brasileiro: foto de nota/cupom fiscal OU print (captura de tela) do detalhe de um pedido no site/app do mercado. Extraia a compra e responda SOMENTE com JSON:
+            text: `Estas imagens mostram uma compra de supermercado brasileiro: foto de nota/cupom fiscal OU print do pedido/histórico de compras no site/app do mercado. Se houver mais de uma imagem, são partes sequenciais (de cima para baixo) da MESMA captura, com pequena sobreposição — não duplique itens da região repetida. Extraia TODOS os itens legíveis e responda SOMENTE com JSON:
 {"store":"nome do mercado","date":"data da compra em YYYY-MM-DD, ou null se ilegível","total":123.45,
- "items":[{"name":"nome genérico em minúsculas (ex: arroz, batata palha)","brand":"marca se identificável, senão null","package":"peso/tamanho se visível (ex: 5kg), senão null","qty":1,"unitPrice":12.34}]}
+ "items":[{"name":"nome genérico em minúsculas (ex: arroz, batata palha)","brand":"marca se identificável, senão null","package":"peso/tamanho se visível (ex: 5kg), senão null","qty":1,"unitPrice":12.34,"date":"YYYY-MM-DD apenas se o item tiver data própria (histórico), senão omita"}]}
 
-Importante: descrições de cupom são abreviadas — expanda (ex: "ARR TIO JOAO T1 5KG" => name "arroz", brand "Tio João", package "5kg"; "REFRI CC 2L" => name "refrigerante", brand "Coca-Cola", package "2L"). qty é a quantidade comprada e unitPrice o preço unitário em reais. Liste só produtos; ignore taxas de entrega, descontos gerais e linhas de total. Se aparecerem vários pedidos, extraia apenas o mais recente/completo. Se a imagem não for uma compra de mercado, responda {"items":[]}.`
+Regras:
+- NUNCA invente: liste somente itens cujo texto você realmente consegue ler. Se um trecho estiver ilegível, omita-o.
+- Descrições abreviadas: expanda (ex: "ARR TIO JOAO T1 5KG" => name "arroz", brand "Tio João", package "5kg"; "REFRI CC 2L" => name "refrigerante", brand "Coca-Cola", package "2L").
+- Se houver preço original e preço com desconto/clube/oferta, unitPrice é o preço efetivamente pago (com desconto), em reais.
+- qty é a quantidade comprada. Liste só produtos; ignore taxas de entrega, descontos gerais e linhas de total.
+- Se a imagem não for uma compra de mercado, responda {"items":[]}.`
           },
-          { type: 'image_url', image_url: { url: dataUrl } }
+          ...urls.map((url) => ({ type: 'image_url', image_url: { url } }))
         ]
       }
     ]
   });
   if (!data.items?.length) {
-    throw new Error('Não consegui ler itens nessa imagem. Para nota de papel: mais luz e nota esticada (ou por partes). Para pedido online: print do detalhe do pedido, com os itens visíveis.');
+    throw new Error('Não consegui ler itens nessa imagem. Para nota de papel: mais luz e nota esticada. Para pedido online: print com os itens visíveis e legíveis.');
   }
   return data;
 }
